@@ -396,14 +396,15 @@ let[@inline always] vec_dot_q8_0_q8_0 (w : u8_buffer) (w_off : int) (a : u8_buff
   done;
   !sum
 
+let static_temp_w = Array1.create float32 c_layout 16384
+let static_temp_a = Array1.create float32 c_layout 16384
+
 let[@inline always] vec_dot_q4_k_q8_k (w : u8_buffer) (w_off : int) (a : u8_buffer) (a_off : int) (k : int) : float =
-  let temp_w = Array1.create float32 c_layout 256 in
-  let temp_a = Array1.create float32 c_layout 256 in
   let nb = k / 256 in
   let sum = ref 0.0 in
   for b = 0 to nb - 1 do
-    dequantize_row_q4_k w (w_off + b * 144) temp_w 0 256;
-    dequantize_row_q8_0 a (a_off + b * (8 * 34)) temp_a 0 256;
-    sum := !sum +. vec_dot_f32_f32 temp_w 0 temp_a 0 256;
+    dequantize_row_q4_k w (w_off + b * 144) static_temp_w 0 256;
+    dequantize_row_q8_0 a (a_off + b * (8 * 34)) static_temp_a 0 256;
+    sum := !sum +. vec_dot_f32_f32 static_temp_w 0 static_temp_a 0 256;
   done;
   !sum
