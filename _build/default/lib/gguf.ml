@@ -375,6 +375,8 @@ let load_model_weights (f : gguf_file) (hp : hyperparameters) : model_weights =
     {
       attn_norm = try_tensor (pfx ^ "attn_norm.weight");
       attn_norm_2 = try_tensor (pfx ^ "attn_norm_2.weight");
+      attn_q_norm = try_tensor (pfx ^ "attn_q_norm.weight");
+      attn_k_norm = try_tensor (pfx ^ "attn_k_norm.weight");
       wq = try_tensor (pfx ^ "attn_q.weight");
       wk = try_tensor (pfx ^ "attn_k.weight");
       wv = try_tensor (pfx ^ "attn_v.weight");

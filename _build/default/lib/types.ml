@@ -177,6 +177,8 @@ type tokenizer = {
 type layer_weights = {
   attn_norm : tensor option;
   attn_norm_2 : tensor option;
+  attn_q_norm : tensor option;
+  attn_k_norm : tensor option;
   wq : tensor option;
   wk : tensor option;
   wv : tensor option;
@@ -390,7 +392,7 @@ let string_to_arch = function
   | "llama" | "llama2" | "llama3" -> ARCH_LLAMA
   | "mistral" -> ARCH_MISTRAL
   | "mixtral" -> ARCH_MIXTRAL
-  | "qwen2" | "qwen2.5" -> ARCH_QWEN2
+  | "qwen2" | "qwen2.5" | "qwen3" -> ARCH_QWEN2
   | "deepseek2" | "deepseek" -> ARCH_DEEPSEEK2
   | "gemma" -> ARCH_GEMMA
   | "gemma2" -> ARCH_GEMMA2

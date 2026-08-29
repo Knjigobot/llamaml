@@ -57,9 +57,13 @@ let forward (m : model_instance) ~(token_ids : token_id array) ~(n_past : int) :
     let k_raw = Ops.mul_mat wk x_norm in
     let v_raw = Ops.mul_mat wv x_norm in
 
+    (* QK Norm (Qwen2.5 / Qwen3 / Puro architecture) *)
+    let q_normed = match layer.attn_q_norm with Some qn -> Ops.rms_norm q_raw qn eps | None -> q_raw in
+    let k_normed = match layer.attn_k_norm with Some kn -> Ops.rms_norm k_raw kn eps | None -> k_raw in
+
     (* Reshape Q, K, V for multi-head attention *)
-    let q_3d = Tensor.reshape q_raw [| head_dim; n_tokens; n_head; 1 |] in
-    let k_3d = Tensor.reshape k_raw [| head_dim; n_tokens; m.hp.n_head_kv; 1 |] in
+    let q_3d = Tensor.reshape q_normed [| head_dim; n_tokens; n_head; 1 |] in
+    let k_3d = Tensor.reshape k_normed [| head_dim; n_tokens; m.hp.n_head_kv; 1 |] in
     let v_3d = Tensor.reshape v_raw [| head_dim; n_tokens; m.hp.n_head_kv; 1 |] in
 
     (* RoPE *)

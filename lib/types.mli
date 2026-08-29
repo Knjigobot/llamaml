@@ -177,6 +177,8 @@ type tokenizer = {
 type layer_weights = {
   attn_norm : tensor option;
   attn_norm_2 : tensor option;
+  attn_q_norm : tensor option;
+  attn_k_norm : tensor option;
   wq : tensor option;
   wk : tensor option;
   wv : tensor option;
