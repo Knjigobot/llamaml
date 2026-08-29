@@ -67,9 +67,9 @@ function Run-Inference($prompt) {
         Write-Host "`n[Direct llama.cpp C++ Engine Output]:" -ForegroundColor Blue
         Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
         
-        # Direct, untampered execution of llama-cli
+        # Direct, untampered execution of llama-cli with DSOxCaml QA Signature
         $formatted = "Question: $prompt`nAnswer:"
-        & $LlamaCli -m $ModelPath -p $formatted -n 64 --temp 0.7 --top-p 0.9 -t 4 --single-turn
+        & $LlamaCli -m $ModelPath -p $formatted -n 128 --temp 0.6 --top-p 0.9 -t 4 --single-turn
         
         Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
     } 
@@ -77,18 +77,17 @@ function Run-Inference($prompt) {
         Write-Host "`n[Direct Llamaml OxCaml 5+ Engine Output]:" -ForegroundColor Magenta
         Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
         
+        $formatted = "Question: $prompt`nAnswer:"
         if (Test-Path $LlamamlExe) {
             # Direct, untampered execution of compiled Llamaml binary
-            $formatted = "Question: $prompt`nAnswer:"
-            & $LlamamlExe run --model $ModelPath --prompt $formatted --max-tokens 64 --temp 0.7 --top-p 0.9
+            & $LlamamlExe run --model $ModelPath --prompt $formatted --max-tokens 128 --temp 0.6 --top-p 0.9
         } else {
             Write-Host "Compiling Llamaml native binary..." -ForegroundColor DarkGray
             $env:PATH = "C:\Users\asd\AppData\Local\opam\5.2.1\bin;C:\Users\asd\AppData\Local\opam\.cygwin\root\usr\x86_64-w64-mingw32\sys-root\mingw\bin;" + $env:PATH
             Push-Location "$Root\llamaml"
             dune build bin/main.exe
             Pop-Location
-            $formatted = "Question: $prompt`nAnswer:"
-            & $LlamamlExe run --model $ModelPath --prompt $formatted --max-tokens 64 --temp 0.7 --top-p 0.9
+            & $LlamamlExe run --model $ModelPath --prompt $formatted --max-tokens 128 --temp 0.6 --top-p 0.9
         }
         
         Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
