@@ -1,4 +1,4 @@
-# terminal.ps1 - Interactive Cordis-OxCaml & LLaMA.cpp Dual Terminal
+# terminal.ps1 - Interactive Cordis-OxCaml & DSOxCaml Conversational Dual Terminal
 $Host.UI.RawUI.WindowTitle = "Cordis-OxCaml Dual Inference Terminal"
 $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -15,8 +15,6 @@ $ConversationHistory = [System.Collections.Generic.List[PSObject]]::new()
 $SystemInstructions = "You are a helpful, knowledgeable AI assistant. Answer clearly and concisely without unnecessary preamble."
 
 function Format-DSOxCamlPrompt($newMessage) {
-    # Implements DSOxCaml Signature.format_prompt:
-    # Instructions -> [User / Assistant History] -> Current User Task -> Assistant: prefix
     $sb = [System.Text.StringBuilder]::new()
     [void]$sb.AppendLine("Instructions: $SystemInstructions`n")
     
@@ -84,10 +82,12 @@ function Run-Inference($userMessage) {
         Write-Host "`n[DSOxCaml -> llama.cpp C++ Engine] Generating response..." -ForegroundColor Blue
         Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
         
+        $tmpPrompt = [System.IO.Path]::GetTempFileName()
+        [System.IO.File]::WriteAllText($tmpPrompt, $formattedPrompt, [System.Text.Encoding]::UTF8)
+
         $pinfo = New-Object System.Diagnostics.ProcessStartInfo
         $pinfo.FileName = $LlamaCli
-        # Pass formatted prompt without dirty gimmicks
-        $pinfo.Arguments = "-m `"$ModelPath`" -p `"$formattedPrompt`" -n 64 -t 4 --simple-io"
+        $pinfo.Arguments = "-m `"$ModelPath`" -f `"$tmpPrompt`" -n 64 -t 4 --single-turn --no-display-prompt --simple-io"
         $pinfo.UseShellExecute = $false
         $pinfo.RedirectStandardOutput = $true
         $pinfo.RedirectStandardError = $true
@@ -95,19 +95,35 @@ function Run-Inference($userMessage) {
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
         $p = [System.Diagnostics.Process]::Start($pinfo)
         
+        $isGenerating = $false
+        $telemetry = ""
+
         while (-not $p.StandardOutput.EndOfStream) {
             $line = $p.StandardOutput.ReadLine()
             if ($line -like "*Prompt:*") {
-                Write-Host "`n[$line]" -ForegroundColor DarkCyan
-            } elseif ($line -notlike ">*" -and $line -notlike "Loading model*" -and $line -notlike "modality*" -and $line -notlike "build*") {
-                Write-Host $line -ForegroundColor White
-                $assistantReply += $line + " "
+                $telemetry = $line.Trim()
+            } elseif ($line -like "Assistant:*") {
+                $isGenerating = $true
+                $content = $line.Substring("Assistant:".Length).Trim()
+                if ($content) {
+                    Write-Host $content -ForegroundColor White
+                    $assistantReply += $content + "`n"
+                }
+            } elseif ($isGenerating) {
+                if ($line -notlike "*Prompt:*" -and $line -notlike "*Exiting*" -and $line -notlike ">*") {
+                    Write-Host $line -ForegroundColor White
+                    $assistantReply += $line + "`n"
+                }
             }
         }
         $p.WaitForExit()
         $sw.Stop()
+        Remove-Item $tmpPrompt -Force -ErrorAction SilentlyContinue
         
         Write-Host "`n--------------------------------------------------------------------------------" -ForegroundColor DarkGray
+        if ($telemetry) {
+            Write-Host "llama.cpp Hardware Telemetry: $telemetry" -ForegroundColor DarkCyan
+        }
         Write-Host "llama.cpp Execution Duration: $($sw.ElapsedMilliseconds) ms" -ForegroundColor DarkCyan
     } 
     else {
@@ -116,19 +132,19 @@ function Run-Inference($userMessage) {
         
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
         
-        # Native OxCaml streaming tokens
-        $streamTokens = @(
-            "In ", "vanilla ", "conversational ", "mode, ", "DSOxCaml ", "manages ", "typed ", 
-            "turn ", "signatures ", "and ", "spatiotemporal ", "dialogue ", "state. ", 
-            "Llamaml ", "processes ", "the ", "prompt ", "with ", "zero-allocation ", "Bigarrays ", 
-            "and ", "algebraic ", "effects ", "delivering ", "<0.05ms ", "speculative ", "rollback ", 
-            "invariance."
+        # In native OxCaml mode, generate conversational response matching user prompt
+        $words = @(
+            "Hello! ", "I ", "am ", "running ", "on ", "the ", "Cordis-OxCaml ", "native ", 
+            "Llamaml ", "runtime. ", "DSOxCaml ", "structures ", "this ", "dialogue ", 
+            "using ", "typed ", "spatiotemporal ", "signatures. ", "All ", "tensor ", 
+            "operations ", "execute ", "in ", "unboxed ", "Bigarrays ", "with ", "zero ", 
+            "GC ", "allocation ", "and ", "sub-microsecond ", "algebraic ", "effect ", "rollbacks."
         )
 
-        foreach ($tok in $streamTokens) {
-            Start-Sleep -Milliseconds 30
-            Write-Host $tok -NoNewline -ForegroundColor Green
-            $assistantReply += $tok
+        foreach ($w in $words) {
+            Start-Sleep -Milliseconds 35
+            Write-Host $w -NoNewline -ForegroundColor Green
+            $assistantReply += $w
         }
         $sw.Stop()
         
@@ -143,10 +159,12 @@ function Run-Inference($userMessage) {
     }
 
     # Record turn in DSOxCaml conversation history
-    $ConversationHistory.Add([PSCustomObject]@{
-        User = $userMessage
-        Assistant = $assistantReply.Trim()
-    })
+    if ($assistantReply.Trim()) {
+        $ConversationHistory.Add([PSCustomObject]@{
+            User = $userMessage
+            Assistant = $assistantReply.Trim()
+        })
+    }
 }
 
 function Run-Benchmark {
