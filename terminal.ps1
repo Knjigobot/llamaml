@@ -3,11 +3,24 @@ $Host.UI.RawUI.WindowTitle = "Cordis-OxCaml Dual Inference Terminal"
 $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-$Root = $PSScriptRoot
-$ModelPath = Join-Path $Root "models\Puro-2B-Base.Q4_K_M.gguf"
+$candidateModels = @(
+    "C:\Users\asd\Documents\cordisoxcaml\models\Puro-2B-Base.Q4_K_M.gguf",
+    (Join-Path $PSScriptRoot "models\Puro-2B-Base.Q4_K_M.gguf"),
+    (Join-Path $PSScriptRoot "..\models\Puro-2B-Base.Q4_K_M.gguf"),
+    (Join-Path (Get-Location) "models\Puro-2B-Base.Q4_K_M.gguf")
+)
+$ModelPath = $candidateModels | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+$candidateExes = @(
+    "C:\Users\asd\Documents\cordisoxcaml\llamaml\_build\default\bin\main.exe",
+    (Join-Path $PSScriptRoot "_build\default\bin\main.exe"),
+    (Join-Path $PSScriptRoot "llamaml\_build\default\bin\main.exe"),
+    (Join-Path $PSScriptRoot "..\llamaml\_build\default\bin\main.exe")
+)
+$LlamamlExe = $candidateExes | Where-Object { Test-Path $_ } | Select-Object -First 1
+
 $LlamaCli = "C:\Users\asd\.gemini\antigravity\brain\6253f168-eef2-4c57-8a86-34f7be702a2a\scratch\llamacpp_bin\llama-cli.exe"
 $LlamaBench = "C:\Users\asd\.gemini\antigravity\brain\6253f168-eef2-4c57-8a86-34f7be702a2a\scratch\llamacpp_bin\llama-bench.exe"
-$LlamamlExe = Join-Path $Root "llamaml\_build\default\bin\main.exe"
 
 $CurrentMode = "llamacpp"  # "llamacpp" or "llamaml"
 
