@@ -18,5 +18,5 @@
   (dune (>= 3.10.0))
   (unix (>= 0))
   (bigarray (>= 0))
-  (alcotest (>= 1.7.0) :with-test))
+  (alcotest :with-test))
  (tags ("llamaml" "ggml" "llama.cpp" "llm" "oxcaml" "cordis" "effects" "quantization" "inference" "formal-verification")))

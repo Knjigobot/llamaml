@@ -1,5 +1,5 @@
 (library
  (name llamaml)
  (public_name llamaml)
- (libraries unix bigarray cordis_core cordis_system)
- (flags (:standard -w -32-33-34-27-39 -O3)))
+ (libraries unix str bigarray)
+ (flags (:standard -w -32-33-34-27-39)))

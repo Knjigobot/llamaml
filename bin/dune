@@ -1,5 +1,5 @@
 (executable
  (name main)
  (public_name llamaml)
- (libraries llamaml unix cordis_core cordis_system)
- (flags (:standard -w -32-33-34-27-39 -O3)))
+ (libraries llamaml unix str)
+ (flags (:standard -w -32-33-34-27-39)))
