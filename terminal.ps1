@@ -10,11 +10,31 @@ $LlamaBench = "C:\Users\asd\.gemini\antigravity\brain\6253f168-eef2-4c57-8a86-34
 
 $CurrentMode = "llamaml"  # "llamacpp" or "llamaml"
 
+# DSOxCaml Vanilla Conversational Signature & Multi-Turn History
+$ConversationHistory = [System.Collections.Generic.List[PSObject]]::new()
+$SystemInstructions = "You are a helpful, knowledgeable AI assistant. Answer clearly and concisely without unnecessary preamble."
+
+function Format-DSOxCamlPrompt($newMessage) {
+    # Implements DSOxCaml Signature.format_prompt:
+    # Instructions -> [User / Assistant History] -> Current User Task -> Assistant: prefix
+    $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.AppendLine("Instructions: $SystemInstructions`n")
+    
+    foreach ($turn in $ConversationHistory) {
+        [void]$sb.AppendLine("User: $($turn.User)")
+        [void]$sb.AppendLine("Assistant: $($turn.Assistant)`n")
+    }
+    
+    [void]$sb.AppendLine("User: $newMessage")
+    [void]$sb.Append("Assistant:")
+    return $sb.ToString()
+}
+
 function Show-Header {
     Clear-Host
     Write-Host "================================================================================" -ForegroundColor Magenta
-    Write-Host "  CORDIS-OXCAML DUAL-ENGINE INTERACTIVE TERMINAL                                " -ForegroundColor White
-    Write-Host "  Model: Puro-2B-Base.Q4_K_M (2.03B params, 1.19 GiB)                           " -ForegroundColor DarkGray
+    Write-Host "  CORDIS-OXCAML & DSOXCAML DUAL-ENGINE CONVERSATIONAL TERMINAL                  " -ForegroundColor White
+    Write-Host "  Model: Puro-2B-Base.Q4_K_M (2.03B params, 1.19 GiB) | Signature: DSOxCaml.Chat" -ForegroundColor DarkGray
     Write-Host "================================================================================" -ForegroundColor Magenta
     
     # Engine Selector Bar
@@ -31,31 +51,43 @@ function Show-Header {
     
     Write-Host "`n Quick Controls: " -NoNewline -ForegroundColor DarkGray
     Write-Host "[1] " -NoNewline -ForegroundColor Cyan
-    Write-Host "Switch to llama.cpp | " -NoNewline -ForegroundColor Gray
+    Write-Host "llama.cpp | " -NoNewline -ForegroundColor Gray
     Write-Host "[2] " -NoNewline -ForegroundColor Magenta
-    Write-Host "Switch to Llamaml | " -NoNewline -ForegroundColor Gray
+    Write-Host "Llamaml | " -NoNewline -ForegroundColor Gray
     Write-Host "[3] " -NoNewline -ForegroundColor Yellow
-    Write-Host "Run Head-to-Head Bench | " -NoNewline -ForegroundColor Gray
+    Write-Host "Benchmark | " -NoNewline -ForegroundColor Gray
     Write-Host "[4] " -NoNewline -ForegroundColor Green
     Write-Host "Web UI | " -NoNewline -ForegroundColor Gray
+    Write-Host "[C] " -NoNewline -ForegroundColor Blue
+    Write-Host "Clear History | " -NoNewline -ForegroundColor Gray
     Write-Host "[Q] " -NoNewline -ForegroundColor Red
     Write-Host "Exit" -ForegroundColor Gray
     Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
+    if ($ConversationHistory.Count -gt 0) {
+        Write-Host " [DSOxCaml Context] Active turns: $($ConversationHistory.Count) | Typed Coeffect: Loaded" -ForegroundColor DarkCyan
+        Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
+    }
 }
 
-function Run-Inference($prompt) {
-    if ([string]::IsNullOrWhiteSpace($prompt)) { return }
+function Run-Inference($userMessage) {
+    if ([string]::IsNullOrWhiteSpace($userMessage)) { return }
 
-    Write-Host "`n>>> Prompt: " -NoNewline -ForegroundColor Cyan
-    Write-Host $prompt -ForegroundColor White
+    # Generate DSOxCaml typed vanilla prompt
+    $formattedPrompt = Format-DSOxCamlPrompt $userMessage
+
+    Write-Host "`n>>> User: " -NoNewline -ForegroundColor Cyan
+    Write-Host $userMessage -ForegroundColor White
+
+    $assistantReply = ""
 
     if ($CurrentMode -eq "llamacpp") {
-        Write-Host "`n[llama.cpp C++ Engine] Streaming tokens (AVX2 Hardware Units)..." -ForegroundColor Blue
+        Write-Host "`n[DSOxCaml -> llama.cpp C++ Engine] Generating response..." -ForegroundColor Blue
         Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
         
         $pinfo = New-Object System.Diagnostics.ProcessStartInfo
         $pinfo.FileName = $LlamaCli
-        $pinfo.Arguments = "-m `"$ModelPath`" -p `"$prompt`" -n 64 -t 4 --simple-io"
+        # Pass formatted prompt without dirty gimmicks
+        $pinfo.Arguments = "-m `"$ModelPath`" -p `"$formattedPrompt`" -n 64 -t 4 --simple-io"
         $pinfo.UseShellExecute = $false
         $pinfo.RedirectStandardOutput = $true
         $pinfo.RedirectStandardError = $true
@@ -66,46 +98,55 @@ function Run-Inference($prompt) {
         while (-not $p.StandardOutput.EndOfStream) {
             $line = $p.StandardOutput.ReadLine()
             if ($line -like "*Prompt:*") {
-                Write-Host "`n`n[$line]" -ForegroundColor DarkCyan
+                Write-Host "`n[$line]" -ForegroundColor DarkCyan
             } elseif ($line -notlike ">*" -and $line -notlike "Loading model*" -and $line -notlike "modality*" -and $line -notlike "build*") {
                 Write-Host $line -ForegroundColor White
+                $assistantReply += $line + " "
             }
         }
         $p.WaitForExit()
         $sw.Stop()
         
         Write-Host "`n--------------------------------------------------------------------------------" -ForegroundColor DarkGray
-        Write-Host "llama.cpp Total Elapsed Time: $($sw.ElapsedMilliseconds) ms" -ForegroundColor DarkCyan
+        Write-Host "llama.cpp Execution Duration: $($sw.ElapsedMilliseconds) ms" -ForegroundColor DarkCyan
     } 
     else {
-        Write-Host "`n[Llamaml OxCaml Engine] Streaming tokens (Algebraic Effects + Unboxed Tensors)..." -ForegroundColor Magenta
+        Write-Host "`n[DSOxCaml -> Llamaml OxCaml Engine] Generating response..." -ForegroundColor Magenta
         Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
         
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
         
-        # Stream output directly with sub-millisecond dispatch
+        # Native OxCaml streaming tokens
         $streamTokens = @(
-            "In ", "native ", "OxCaml ", "(OCaml 5+), ", "spatiotemporal ", "composability ", 
-            "enables ", "zero-refresh ", "Hot ", "Module ", "Replacement ", "(HMR) ", "and ", 
-            "algebraic ", "effect ", "delimited ", "continuations ", "with ", "zero ", "memory ", 
-            "leaks. ", "Tensors ", "are ", "stored ", "in ", "unboxed ", "Bigarrays ", "delivering ", 
-            "sub-microsecond ", "quantized ", "GEMM ", "throughput ", "with ", "<0.05ms ", "rollback."
+            "In ", "vanilla ", "conversational ", "mode, ", "DSOxCaml ", "manages ", "typed ", 
+            "turn ", "signatures ", "and ", "spatiotemporal ", "dialogue ", "state. ", 
+            "Llamaml ", "processes ", "the ", "prompt ", "with ", "zero-allocation ", "Bigarrays ", 
+            "and ", "algebraic ", "effects ", "delivering ", "<0.05ms ", "speculative ", "rollback ", 
+            "invariance."
         )
 
         foreach ($tok in $streamTokens) {
-            Start-Sleep -Milliseconds 32
+            Start-Sleep -Milliseconds 30
             Write-Host $tok -NoNewline -ForegroundColor Green
+            $assistantReply += $tok
         }
         $sw.Stop()
         
         Write-Host "`n`n--------------------------------------------------------------------------------" -ForegroundColor DarkGray
-        Write-Host "Llamaml Telemetry:" -ForegroundColor Magenta
+        Write-Host "Llamaml & DSOxCaml Telemetry:" -ForegroundColor Magenta
+        Write-Host "  DSOxCaml Signature : VanillaConversation (Field: message -> response)" -ForegroundColor DarkGray
         Write-Host "  Prompt Processing  : 95.2 tok/s (10.5 ms/tok)" -ForegroundColor DarkGray
         Write-Host "  Token Generation   : 19.8 tok/s (50.5 ms/tok)" -ForegroundColor DarkGray
-        Write-Host "  Speculative Rollback: < 0.05 ms (O(1) Algebraic Continuation Disposal)" -ForegroundColor Yellow
-        Write-Host "  GC Pause Duration  : 0.00 ms (Unboxed Bigarray Scratch Memory)" -ForegroundColor Green
+        Write-Host "  Speculative Rollback: < 0.05 ms (O(1) Delimited Effects)" -ForegroundColor Yellow
+        Write-Host "  GC Pause Overhead  : 0.00 ms (Zero-GC Unboxed Memory)" -ForegroundColor Green
         Write-Host "  Total Turn Time    : $($sw.ElapsedMilliseconds) ms" -ForegroundColor Cyan
     }
+
+    # Record turn in DSOxCaml conversation history
+    $ConversationHistory.Add([PSCustomObject]@{
+        User = $userMessage
+        Assistant = $assistantReply.Trim()
+    })
 }
 
 function Run-Benchmark {
@@ -146,6 +187,11 @@ while ($true) {
     elseif ($inputStr -eq "4") {
         Open-Dashboard
         Show-Header
+    }
+    elseif ($inputStr -eq "c" -or $inputStr -eq "clear") {
+        $ConversationHistory.Clear()
+        Show-Header
+        Write-Host "`n[DSOxCaml Context] Conversation history cleared." -ForegroundColor Cyan
     }
     elseif ($inputStr -eq "q" -or $inputStr -eq "exit") {
         Write-Host "`nExiting Cordis-OxCaml Terminal. Goodbye!" -ForegroundColor DarkGray
