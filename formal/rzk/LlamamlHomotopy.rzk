@@ -1,0 +1,25 @@
+#lang rzk-1
+
+-- Synthetic Simplicial Homotopy Type Theory: Computation DAG Homotopy & Speculative Rollbacks
+
+#def is-computation-dag-homotopy
+  (Node : U)
+  (ForwardPass : Node -> U)
+  (FusedForward : Node -> U)
+  : U
+  := (n : Node) -> (ForwardPass n =_U FusedForward n)
+
+#def speculative-decoding-2-simplex
+  (State : U)
+  (DraftStep : State -> State)
+  (VerifyStep : State -> State)
+  (DirectStep : State -> State)
+  : U
+  := (s : State) -> (VerifyStep (DraftStep s) =_State DirectStep s)
+
+#def cordis-lifo-disposal-invariance
+  (Context : U)
+  (allocate-tensor : Context -> Context)
+  (dispose-tensor : Context -> Context)
+  : U
+  := (ctx : Context) -> (dispose-tensor (allocate-tensor ctx) =_Context ctx)

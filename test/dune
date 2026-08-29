@@ -1,0 +1,11 @@
+(tests
+ (names
+  test_quant
+  test_ops
+  test_gguf
+  test_tokenizer
+  test_sampler
+  test_model
+  test_cordis)
+ (libraries llamaml cordis_core cordis_system alcotest)
+ (flags (:standard -w -32-33-34-27-39 -O3)))

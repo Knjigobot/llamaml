@@ -1,0 +1,30 @@
+opam-version: "2.0"
+synopsis: "Pure OxCaml GGML Tensor Engine & LLaMA.cpp LLM Inference on Cordis-OxCaml"
+description: """
+Llamaml is an industrial-grade, full-fidelity port of ggml and llama.cpp in pure native OxCaml (OCaml 5+ with Algebraic Effects). Powered by the Cordis-OxCaml Spatiotemporal Composability Meta-Framework, it delivers zero-GC unboxed Bigarray tensor compute, full quantization kernels (Q4_0, Q4_K, Q8_0, F16), GGUF v2/v3 binary parsing, universal Transformer architecture (LLaMA, Mistral, Mixtral, Qwen, DeepSeek MLA/MoE), FlashAttention-2, advanced sampling, OpenAI-compatible HTTP/SSE server, and formal verification in Cubical Agda and Rzk.
+"""
+maintainer: ["llamaml@cordis.org"]
+authors: ["DeepSeek-AI" "Knjigobot" "Jane Street" "Llamaml Contributors"]
+license: "MIT"
+homepage: "https://github.com/Knjigobot/Cordis-OxCaml"
+bug-reports: "https://github.com/Knjigobot/Cordis-OxCaml/issues"
+depends: [
+  "ocaml" {>= "5.0.0"}
+  "dune" {>= "3.10.0"}
+  "unix" {>= "0"}
+  "alcotest" {with-test & >= "1.7.0"}
+]
+build: [
+  ["dune" "subst"] {dev}
+  [
+    "dune"
+    "build"
+    "-p"
+    name
+    "-j"
+    jobs
+    "@install"
+    "@runtest" {with-test}
+    "@doc" {with-doc}
+  ]
+]
