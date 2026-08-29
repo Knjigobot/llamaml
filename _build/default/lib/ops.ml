@@ -370,6 +370,19 @@ let mul_mat (w : tensor) (a : tensor) : tensor =
         done;
       done
 
+    | TYPE_Q6_K ->
+      let raw_w = match w.data_raw with Some b -> b | None -> failwith "mul_mat: w not raw" in
+      let q8_a = Array1.create int8_unsigned c_layout ((k / 32) * 34) in
+      let row_bytes = (k / 256) * 210 in
+      for col = 0 to n - 1 do
+        Quant.quantize_row_q8_0 buf_a (col * k) q8_a 0 k;
+        for row = r_start to r_end - 1 do
+          let w_off = row * row_bytes in
+          let dot = Quant.vec_dot_q6_k_q8_k raw_w w_off q8_a 0 k in
+          Array1.unsafe_set buf_out (col * m + row) dot;
+        done;
+      done
+
     | _ ->
       let raw_w = match w.data_raw with Some b -> b | None -> failwith "mul_mat: w raw missing" in
       let temp_w = Array1.create float32 c_layout k in

@@ -45,7 +45,7 @@ let main () =
     let m = Model.load !model_path in
     Printf.printf "[Llamaml] Model Loaded! Arch: %s | Vocab: %d | Embd: %d | Layers: %d | Heads: %d\n"
       (arch_to_string m.hp.arch) m.hp.n_vocab m.hp.n_embd m.hp.n_layer m.hp.n_head;
-    Printf.printf "\n>>> Prompt: %s\n\n<<< Generating (Streaming):\n\x1b[32m%!" !prompt;
+    Printf.printf "\n>>> Prompt: %s\n\n<<< Generating (Streaming):\n%!" !prompt;
 
     let cfg = {
       default_sampler_config with
@@ -54,9 +54,9 @@ let main () =
     } in
 
     let _, metrics = Model.generate m ~prompt:!prompt ~max_tokens:!max_tokens cfg
-        ~on_token:(fun piece -> Printf.printf "%s%!" piece) () in
+        ~on_token:(fun piece -> print_string piece; flush stdout) () in
 
-    Printf.printf "\x1b[0m\n\n------------------------------------------------------------\n";
+    Printf.printf "\n\n------------------------------------------------------------\n";
     Printf.printf "Performance Telemetry:\n";
     Printf.printf "  Prompt Eval Duration : %.2f ms (%d tokens, %.1f tok/s)\n"
       metrics.prompt_eval_ms metrics.prompt_tokens

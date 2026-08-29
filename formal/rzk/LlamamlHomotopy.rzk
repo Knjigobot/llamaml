@@ -1,6 +1,6 @@
 #lang rzk-1
 
--- Synthetic Simplicial Homotopy Type Theory: Computation DAG Homotopy & Speculative Rollbacks
+-- Synthetic Simplicial Homotopy Type Theory: Computation DAG Homotopy, Zero-Alloc GEMM & Speculative Rollbacks
 
 #def is-computation-dag-homotopy
   (Node : U)
@@ -8,6 +8,13 @@
   (FusedForward : Node -> U)
   : U
   := (n : Node) -> (ForwardPass n =_U FusedForward n)
+
+#def zero-alloc-gemm-homotopy
+  (MatrixDim : U)
+  (DynamicAllocGEMM : MatrixDim -> U)
+  (StaticScratchGEMM : MatrixDim -> U)
+  : U
+  := (d : MatrixDim) -> (StaticScratchGEMM d =_U DynamicAllocGEMM d)
 
 #def speculative-decoding-2-simplex
   (State : U)
@@ -23,3 +30,11 @@
   (dispose-tensor : Context -> Context)
   : U
   := (ctx : Context) -> (dispose-tensor (allocate-tensor ctx) =_Context ctx)
+
+#def qk-norm-head-invariance
+  (HeadVector : U)
+  (qk-norm : HeadVector -> HeadVector)
+  (rope : HeadVector -> HeadVector)
+  (fused-qk-rope : HeadVector -> HeadVector)
+  : U
+  := (v : HeadVector) -> (rope (qk-norm v) =_HeadVector fused-qk-rope v)

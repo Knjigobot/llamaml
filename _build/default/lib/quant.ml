@@ -408,3 +408,13 @@ let[@inline always] vec_dot_q4_k_q8_k (w : u8_buffer) (w_off : int) (a : u8_buff
     sum := !sum +. vec_dot_f32_f32 static_temp_w 0 static_temp_a 0 256;
   done;
   !sum
+
+let[@inline always] vec_dot_q6_k_q8_k (w : u8_buffer) (w_off : int) (a : u8_buffer) (a_off : int) (k : int) : float =
+  let nb = k / 256 in
+  let sum = ref 0.0 in
+  for b = 0 to nb - 1 do
+    dequantize_row_q6_k w (w_off + b * 210) static_temp_w 0 256;
+    dequantize_row_q8_0 a (a_off + b * (8 * 34)) static_temp_a 0 256;
+    sum := !sum +. vec_dot_f32_f32 static_temp_w 0 static_temp_a 0 256;
+  done;
+  !sum

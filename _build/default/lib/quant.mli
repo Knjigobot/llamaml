@@ -23,3 +23,4 @@ val vec_dot_f32_f32 : f32_buffer -> int -> f32_buffer -> int -> int -> float
 val vec_dot_q4_0_q8_0 : u8_buffer -> int -> u8_buffer -> int -> int -> float
 val vec_dot_q8_0_q8_0 : u8_buffer -> int -> u8_buffer -> int -> int -> float
 val vec_dot_q4_k_q8_k : u8_buffer -> int -> u8_buffer -> int -> int -> float
+val vec_dot_q6_k_q8_k : u8_buffer -> int -> u8_buffer -> int -> int -> float
