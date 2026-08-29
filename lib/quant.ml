@@ -291,29 +291,36 @@ let quantize_row_q4_0 (src : f32_buffer) (src_off : int) (dst : u8_buffer) (dst_
     d_off := !d_off + 16;
   done
 
-(* High-performance dot products *)
+(* High-performance 8-way unrolled vectorized dot products *)
 
-let vec_dot_f32_f32 (x : f32_buffer) (x_off : int) (y : f32_buffer) (y_off : int) (n : int) : float =
-  let sum = ref 0.0 in
-  let n4 = n land (lnot 3) in
+let[@inline always] vec_dot_f32_f32 (x : f32_buffer) (x_off : int) (y : f32_buffer) (y_off : int) (n : int) : float =
+  let sum0 = ref 0.0 in
+  let sum1 = ref 0.0 in
+  let sum2 = ref 0.0 in
+  let sum3 = ref 0.0 in
+  let n8 = n land (lnot 7) in
   let i = ref 0 in
-  while !i < n4 do
-    let idx_x = x_off + !i in
-    let idx_y = y_off + !i in
-    let v0 = Array1.unsafe_get x idx_x *. Array1.unsafe_get y idx_y in
-    let v1 = Array1.unsafe_get x (idx_x + 1) *. Array1.unsafe_get y (idx_y + 1) in
-    let v2 = Array1.unsafe_get x (idx_x + 2) *. Array1.unsafe_get y (idx_y + 2) in
-    let v3 = Array1.unsafe_get x (idx_x + 3) *. Array1.unsafe_get y (idx_y + 3) in
-    sum := !sum +. v0 +. v1 +. v2 +. v3;
-    i := !i + 4;
+  while !i < n8 do
+    let ix = x_off + !i in
+    let iy = y_off + !i in
+    sum0 := !sum0 +. (Array1.unsafe_get x ix *. Array1.unsafe_get y iy)
+                  +. (Array1.unsafe_get x (ix + 1) *. Array1.unsafe_get y (iy + 1));
+    sum1 := !sum1 +. (Array1.unsafe_get x (ix + 2) *. Array1.unsafe_get y (iy + 2))
+                  +. (Array1.unsafe_get x (ix + 3) *. Array1.unsafe_get y (iy + 3));
+    sum2 := !sum2 +. (Array1.unsafe_get x (ix + 4) *. Array1.unsafe_get y (iy + 4))
+                  +. (Array1.unsafe_get x (ix + 5) *. Array1.unsafe_get y (iy + 5));
+    sum3 := !sum3 +. (Array1.unsafe_get x (ix + 6) *. Array1.unsafe_get y (iy + 6))
+                  +. (Array1.unsafe_get x (ix + 7) *. Array1.unsafe_get y (iy + 7));
+    i := !i + 8;
   done;
+  let total = ref (!sum0 +. !sum1 +. !sum2 +. !sum3) in
   while !i < n do
-    sum := !sum +. (Array1.unsafe_get x (x_off + !i) *. Array1.unsafe_get y (y_off + !i));
+    total := !total +. (Array1.unsafe_get x (x_off + !i) *. Array1.unsafe_get y (y_off + !i));
     incr i;
   done;
-  !sum
+  !total
 
-let vec_dot_q4_0_q8_0 (w : u8_buffer) (w_off : int) (a : u8_buffer) (a_off : int) (k : int) : float =
+let[@inline always] vec_dot_q4_0_q8_0 (w : u8_buffer) (w_off : int) (a : u8_buffer) (a_off : int) (k : int) : float =
   let nb = k / 32 in
   let sum = ref 0.0 in
   let w_ptr = ref w_off in
@@ -324,24 +331,35 @@ let vec_dot_q4_0_q8_0 (w : u8_buffer) (w_off : int) (a : u8_buffer) (a_off : int
     let d = d_w *. d_a in
     w_ptr := !w_ptr + 2;
     a_ptr := !a_ptr + 2;
-    let isum = ref 0 in
-    for i = 0 to 15 do
-      let byte_w = Array1.unsafe_get w (!w_ptr + i) in
-      let q0 = (byte_w land 0x0F) - 8 in
-      let q1 = ((byte_w lsr 4) land 0x0F) - 8 in
-      let byte_a0 = Array1.unsafe_get a (!a_ptr + i) in
-      let byte_a1 = Array1.unsafe_get a (!a_ptr + i + 16) in
-      let sa0 = if byte_a0 >= 128 then byte_a0 - 256 else byte_a0 in
-      let sa1 = if byte_a1 >= 128 then byte_a1 - 256 else byte_a1 in
-      isum := !isum + (q0 * sa0) + (q1 * sa1);
+    
+    (* 8-way unrolled accumulator for 32 weights per block *)
+    let isum0 = ref 0 in
+    let isum1 = ref 0 in
+    
+    for i = 0 to 7 do
+      let byte_w0 = Array1.unsafe_get w (!w_ptr + i) in
+      let byte_w1 = Array1.unsafe_get w (!w_ptr + i + 8) in
+      
+      let q0_0 = (byte_w0 land 0x0F) - 8 in
+      let q0_1 = ((byte_w0 lsr 4) land 0x0F) - 8 in
+      let q1_0 = (byte_w1 land 0x0F) - 8 in
+      let q1_1 = ((byte_w1 lsr 4) land 0x0F) - 8 in
+      
+      let sa0_0 = let b = Array1.unsafe_get a (!a_ptr + i) in if b >= 128 then b - 256 else b in
+      let sa0_1 = let b = Array1.unsafe_get a (!a_ptr + i + 16) in if b >= 128 then b - 256 else b in
+      let sa1_0 = let b = Array1.unsafe_get a (!a_ptr + i + 8) in if b >= 128 then b - 256 else b in
+      let sa1_1 = let b = Array1.unsafe_get a (!a_ptr + i + 24) in if b >= 128 then b - 256 else b in
+      
+      isum0 := !isum0 + (q0_0 * sa0_0) + (q0_1 * sa0_1);
+      isum1 := !isum1 + (q1_0 * sa1_0) + (q1_1 * sa1_1);
     done;
-    sum := !sum +. (float_of_int !isum *. d);
+    sum := !sum +. (float_of_int (!isum0 + !isum1) *. d);
     w_ptr := !w_ptr + 16;
     a_ptr := !a_ptr + 32;
   done;
   !sum
 
-let vec_dot_q8_0_q8_0 (w : u8_buffer) (w_off : int) (a : u8_buffer) (a_off : int) (k : int) : float =
+let[@inline always] vec_dot_q8_0_q8_0 (w : u8_buffer) (w_off : int) (a : u8_buffer) (a_off : int) (k : int) : float =
   let nb = k / 32 in
   let sum = ref 0.0 in
   let w_ptr = ref w_off in
@@ -352,22 +370,33 @@ let vec_dot_q8_0_q8_0 (w : u8_buffer) (w_off : int) (a : u8_buffer) (a_off : int
     let d = d_w *. d_a in
     w_ptr := !w_ptr + 2;
     a_ptr := !a_ptr + 2;
-    let isum = ref 0 in
-    for i = 0 to 31 do
-      let byte_w = Array1.unsafe_get w (!w_ptr + i) in
-      let byte_a = Array1.unsafe_get a (!a_ptr + i) in
-      let sw = if byte_w >= 128 then byte_w - 256 else byte_w in
-      let sa = if byte_a >= 128 then byte_a - 256 else byte_a in
-      isum := !isum + (sw * sa);
+    
+    let isum0 = ref 0 in
+    let isum1 = ref 0 in
+    let isum2 = ref 0 in
+    let isum3 = ref 0 in
+    
+    for i = 0 to 7 do
+      let sw0 = let b = Array1.unsafe_get w (!w_ptr + i) in if b >= 128 then b - 256 else b in
+      let sa0 = let b = Array1.unsafe_get a (!a_ptr + i) in if b >= 128 then b - 256 else b in
+      let sw1 = let b = Array1.unsafe_get w (!w_ptr + i + 8) in if b >= 128 then b - 256 else b in
+      let sa1 = let b = Array1.unsafe_get a (!a_ptr + i + 8) in if b >= 128 then b - 256 else b in
+      let sw2 = let b = Array1.unsafe_get w (!w_ptr + i + 16) in if b >= 128 then b - 256 else b in
+      let sa2 = let b = Array1.unsafe_get a (!a_ptr + i + 16) in if b >= 128 then b - 256 else b in
+      let sw3 = let b = Array1.unsafe_get w (!w_ptr + i + 24) in if b >= 128 then b - 256 else b in
+      let sa3 = let b = Array1.unsafe_get a (!a_ptr + i + 24) in if b >= 128 then b - 256 else b in
+      isum0 := !isum0 + (sw0 * sa0);
+      isum1 := !isum1 + (sw1 * sa1);
+      isum2 := !isum2 + (sw2 * sa2);
+      isum3 := !isum3 + (sw3 * sa3);
     done;
-    sum := !sum +. (float_of_int !isum *. d);
+    sum := !sum +. (float_of_int (!isum0 + !isum1 + !isum2 + !isum3) *. d);
     w_ptr := !w_ptr + 32;
     a_ptr := !a_ptr + 32;
   done;
   !sum
 
-let vec_dot_q4_k_q8_k (w : u8_buffer) (w_off : int) (a : u8_buffer) (a_off : int) (k : int) : float =
-  (* Fast super-block dot product fallback to dequantize-dot *)
+let[@inline always] vec_dot_q4_k_q8_k (w : u8_buffer) (w_off : int) (a : u8_buffer) (a_off : int) (k : int) : float =
   let temp_w = Array1.create float32 c_layout 256 in
   let temp_a = Array1.create float32 c_layout 256 in
   let nb = k / 256 in

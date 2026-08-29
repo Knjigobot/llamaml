@@ -315,77 +315,89 @@ let mul_mat (w : tensor) (a : tensor) : tensor =
   let buf_out = match out.data_f32 with Some b -> b | None -> failwith "mul_mat: out not f32" in
   let buf_a = match a.data_f32 with Some b -> b | None -> failwith "mul_mat: a not f32" in
 
-  match w.qtype with
-  | TYPE_F32 ->
-    let buf_w = match w.data_f32 with Some b -> b | None -> failwith "mul_mat: w not f32" in
-    for col = 0 to n - 1 do
-      let a_off = col * k in
-      for row = 0 to m - 1 do
-        let w_off = row * k in
-        let dot = Quant.vec_dot_f32_f32 buf_w w_off buf_a a_off k in
-        Array1.unsafe_set buf_out (col * m + row) dot;
-      done;
-    done
+  let num_threads = min 8 (max 1 (try int_of_string (Sys.getenv "LLAMAML_THREADS") with _ -> 4)) in
+  let chunk_size = max 32 ((m + num_threads - 1) / num_threads) in
 
-  | TYPE_Q4_0 ->
-    let raw_w = match w.data_raw with Some b -> b | None -> failwith "mul_mat: w not raw" in
-    (* Quantize activation column to Q8_0 on the fly for fast integer dot product *)
-    let q8_a = Array1.create int8_unsigned c_layout ((k / 32) * 34) in
-    let row_bytes = (k / 32) * 18 in
-    for col = 0 to n - 1 do
-      Quant.quantize_row_q8_0 buf_a (col * k) q8_a 0 k;
-      for row = 0 to m - 1 do
-        let w_off = row * row_bytes in
-        let dot = Quant.vec_dot_q4_0_q8_0 raw_w w_off q8_a 0 k in
-        Array1.unsafe_set buf_out (col * m + row) dot;
-      done;
-    done
+  let compute_range r_start r_end =
+    match w.qtype with
+    | TYPE_F32 ->
+      let buf_w = match w.data_f32 with Some b -> b | None -> failwith "mul_mat: w not f32" in
+      for col = 0 to n - 1 do
+        let a_off = col * k in
+        for row = r_start to r_end - 1 do
+          let w_off = row * k in
+          let dot = Quant.vec_dot_f32_f32 buf_w w_off buf_a a_off k in
+          Array1.unsafe_set buf_out (col * m + row) dot;
+        done;
+      done
 
-  | TYPE_Q8_0 ->
-    let raw_w = match w.data_raw with Some b -> b | None -> failwith "mul_mat: w not raw" in
-    let q8_a = Array1.create int8_unsigned c_layout ((k / 32) * 34) in
-    let row_bytes = (k / 32) * 34 in
-    for col = 0 to n - 1 do
-      Quant.quantize_row_q8_0 buf_a (col * k) q8_a 0 k;
-      for row = 0 to m - 1 do
-        let w_off = row * row_bytes in
-        let dot = Quant.vec_dot_q8_0_q8_0 raw_w w_off q8_a 0 k in
-        Array1.unsafe_set buf_out (col * m + row) dot;
-      done;
-    done
+    | TYPE_Q4_0 ->
+      let raw_w = match w.data_raw with Some b -> b | None -> failwith "mul_mat: w not raw" in
+      let q8_a = Array1.create int8_unsigned c_layout ((k / 32) * 34) in
+      let row_bytes = (k / 32) * 18 in
+      for col = 0 to n - 1 do
+        Quant.quantize_row_q8_0 buf_a (col * k) q8_a 0 k;
+        for row = r_start to r_end - 1 do
+          let w_off = row * row_bytes in
+          let dot = Quant.vec_dot_q4_0_q8_0 raw_w w_off q8_a 0 k in
+          Array1.unsafe_set buf_out (col * m + row) dot;
+        done;
+      done
 
-  | TYPE_Q4_K ->
-    let raw_w = match w.data_raw with Some b -> b | None -> failwith "mul_mat: w not raw" in
-    let q8_a = Array1.create int8_unsigned c_layout ((k / 32) * 34) in
-    let row_bytes = (k / 256) * 144 in
-    for col = 0 to n - 1 do
-      Quant.quantize_row_q8_0 buf_a (col * k) q8_a 0 k;
-      for row = 0 to m - 1 do
-        let w_off = row * row_bytes in
-        let dot = Quant.vec_dot_q4_k_q8_k raw_w w_off q8_a 0 k in
-        Array1.unsafe_set buf_out (col * m + row) dot;
-      done;
-    done
+    | TYPE_Q8_0 ->
+      let raw_w = match w.data_raw with Some b -> b | None -> failwith "mul_mat: w not raw" in
+      let q8_a = Array1.create int8_unsigned c_layout ((k / 32) * 34) in
+      let row_bytes = (k / 32) * 34 in
+      for col = 0 to n - 1 do
+        Quant.quantize_row_q8_0 buf_a (col * k) q8_a 0 k;
+        for row = r_start to r_end - 1 do
+          let w_off = row * row_bytes in
+          let dot = Quant.vec_dot_q8_0_q8_0 raw_w w_off q8_a 0 k in
+          Array1.unsafe_set buf_out (col * m + row) dot;
+        done;
+      done
 
-  | _ ->
-    (* Fallback: dequantize row on the fly *)
-    let raw_w = match w.data_raw with Some b -> b | None -> failwith "mul_mat: w raw missing" in
-    let temp_w = Array1.create float32 c_layout k in
-    let row_bytes = Tensor.nbytes w / m in
-    for col = 0 to n - 1 do
-      let a_off = col * k in
-      for row = 0 to m - 1 do
-        let w_off = row * row_bytes in
-        (match w.qtype with
-         | TYPE_F16 -> Quant.dequantize_row_f16 raw_w w_off temp_w 0 k
-         | TYPE_Q4_1 -> Quant.dequantize_row_q4_1 raw_w w_off temp_w 0 k
-         | TYPE_Q5_K -> Quant.dequantize_row_q5_k raw_w w_off temp_w 0 k
-         | TYPE_Q6_K -> Quant.dequantize_row_q6_k raw_w w_off temp_w 0 k
-         | _ -> failwith "Unsupported quantization type in mul_mat");
-        let dot = Quant.vec_dot_f32_f32 temp_w 0 buf_a a_off k in
-        Array1.unsafe_set buf_out (col * m + row) dot;
-      done;
-    done;
+    | TYPE_Q4_K ->
+      let raw_w = match w.data_raw with Some b -> b | None -> failwith "mul_mat: w not raw" in
+      let q8_a = Array1.create int8_unsigned c_layout ((k / 32) * 34) in
+      let row_bytes = (k / 256) * 144 in
+      for col = 0 to n - 1 do
+        Quant.quantize_row_q8_0 buf_a (col * k) q8_a 0 k;
+        for row = r_start to r_end - 1 do
+          let w_off = row * row_bytes in
+          let dot = Quant.vec_dot_q4_k_q8_k raw_w w_off q8_a 0 k in
+          Array1.unsafe_set buf_out (col * m + row) dot;
+        done;
+      done
+
+    | _ ->
+      let raw_w = match w.data_raw with Some b -> b | None -> failwith "mul_mat: w raw missing" in
+      let temp_w = Array1.create float32 c_layout k in
+      let row_bytes = Tensor.nbytes w / m in
+      for col = 0 to n - 1 do
+        let a_off = col * k in
+        for row = r_start to r_end - 1 do
+          let w_off = row * row_bytes in
+          (match w.qtype with
+           | TYPE_F16 -> Quant.dequantize_row_f16 raw_w w_off temp_w 0 k
+           | TYPE_Q4_1 -> Quant.dequantize_row_q4_1 raw_w w_off temp_w 0 k
+           | TYPE_Q5_K -> Quant.dequantize_row_q5_k raw_w w_off temp_w 0 k
+           | TYPE_Q6_K -> Quant.dequantize_row_q6_k raw_w w_off temp_w 0 k
+           | _ -> failwith "Unsupported quantization type in mul_mat");
+          let dot = Quant.vec_dot_f32_f32 temp_w 0 buf_a a_off k in
+          Array1.unsafe_set buf_out (col * m + row) dot;
+        done;
+      done
+  in
+
+  let rec run_chunks r =
+    if r < m then begin
+      let r_next = min m (r + chunk_size) in
+      compute_range r r_next;
+      run_chunks r_next;
+    end
+  in
+  run_chunks 0;
   out
 
 (* FlashAttention-2 (Online Tiled Softmax Algorithm) *)
